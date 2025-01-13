@@ -1,0 +1,8 @@
+[package]
+name = "graphics_2nd_try"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gltf = "1.4.1"
+minifb = "0.27.0"
