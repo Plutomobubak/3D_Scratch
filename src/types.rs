@@ -1,4 +1,4 @@
-use std::ops::{Add, Deref, DerefMut, Mul};
+use std::ops::{Add, Deref, DerefMut, Mul, Sub};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 // Global counter for matrix multiplications

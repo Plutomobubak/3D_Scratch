@@ -1,14 +1,18 @@
 use crate::{
-    model::{self, Material, Mesh, Model, Vertex},
+    model::{Material, Mesh, Model, Vertex},
+    physics::Physics,
+    texture::{load_texture, Texture},
     types::Matrix,
     window::Framebuffer,
 };
+use std::sync::{Arc, Mutex};
 
 pub struct Object {
     pub model: Model,
-    pub position: [f32; 3],
+    position: [f32; 3],
     pub rotation: [f32; 3],
     pub scale: [f32; 3],
+    pub physics: Option<Arc<Mutex<Physics>>>,
 }
 impl Object {
     pub fn new(model: Model, position: [f32; 3], rotation: [f32; 3], scale: [f32; 3]) -> Self {
@@ -17,80 +21,189 @@ impl Object {
             position,
             rotation,
             scale,
+            physics: None,
         }
+    }
+    pub fn with_physics(mut self, physics: Arc<Mutex<Physics>>) -> Self {
+        let mut physics = physics;
+        physics.lock().unwrap().mass_center = self.position;
+        self.physics = Some(physics);
+        self
     }
     // Creates cube with center of 0,0,0 and edge lenght of 1, that can be shifted, rotated and
     // resized by params
-    pub fn cube(position: [f32; 3], rotation: [f32; 3], scale: [f32; 3]) -> Self {
+    pub fn cube(
+        position: [f32; 3],
+        rotation: [f32; 3],
+        scale: [f32; 3],
+        texture_path: Option<&str>,
+    ) -> Self {
         let mut vertices: Vec<Vertex> = Vec::new();
-        let face_normals = [
-            [0.0, 0.0, 1.0],  // Front face
-            [0.0, 0.0, -1.0], // Back face
-            [-1.0, 0.0, 0.0], // Left face
-            [1.0, 0.0, 0.0],  // Right face
-            [0.0, 1.0, 0.0],  // Top face
-            [0.0, -1.0, 0.0], // Bottom face
-        ];
-        let vertex_to_faces = [
-            vec![0, 2, 4], // Top-left-front
-            vec![0, 3, 4], // Top-right-front
-            vec![1, 2, 4], // Top-left-back
-            vec![1, 3, 4], // Top-right-back
-            vec![0, 2, 5], // Bottom-left-front
-            vec![0, 3, 5], // Bottom-right-front
-            vec![1, 2, 5], // Bottom-left-back
-            vec![1, 3, 5], // Bottom-right-back
-        ];
 
-        for i in 0..8 {
-            let position = [
-                0.5 - (((i % 4) > 1) as i32) as f32,
-                0.5 - (((i > 3) as i32) as f32),
-                0.5 - ((((i + 1) % 4) > 1) as i32) as f32,
-            ];
-
-            // Average the normals of adjacent faces
-            let mut normal = [0.0, 0.0, 0.0];
-            for &face in &vertex_to_faces[i] {
-                normal[0] += face_normals[face][0];
-                normal[1] += face_normals[face][1];
-                normal[2] += face_normals[face][2];
-            }
-
-            // Normalize the resulting normal vector
-            let length = ((normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2])
-                as f32)
-                .sqrt();
-            normal[0] /= length;
-            normal[1] /= length;
-            normal[2] /= length;
-
-            vertices.push(Vertex { normal, position });
-        }
-        let mut indices: Vec<u32> = Vec::new();
-        indices.append(&mut vec![0, 1, 2, 0, 2, 3]);
-        indices.append(&mut vec![4, 6, 5, 4, 7, 6]);
+        // Sides
         for i in 0..4 {
-            indices.append(&mut vec![i, i + 4, (i + 1) % 4]);
-            indices.append(&mut vec![(i + 1) % 4, i + 4, ((i + 1) % 4 + 4)]);
+            println!("{}", i);
+            for j in 0..4 {
+                let mut position = [0.0; 3];
+                if (i % 2) == 1 {
+                    position = [
+                        0.5 - ((i) % 4 > 1) as i32 as f32,
+                        -0.5 + (j % 4 > 1) as i32 as f32,
+                        -0.5 + ((i + j + 2) % 4 > 1) as i32 as f32,
+                    ];
+                } else {
+                    position = [
+                        -0.5 + ((j + i + 1) % 4 > 1) as i32 as f32,
+                        -0.5 + (j % 4 > 1) as i32 as f32,
+                        0.5 - ((i) % 4 > 1) as i32 as f32,
+                    ];
+                }
+                let normal = [
+                    ((i) % 2) as f32 * (2.0 - i as f32),
+                    0.0,
+                    ((i + 1) % 2) as f32 * (1.0 - i as f32),
+                ];
+                let tex_coord = [
+                    ((i + ((j + 1) % 4 > 1) as i32) as f32) / 6.0,
+                    position[1] + 0.5,
+                ];
+                println!("{:?} {:?}", position, tex_coord);
+
+                vertices.push(Vertex {
+                    normal,
+                    position,
+                    tex_coord,
+                });
+            }
         }
-        //println!("{:?}", indices);
+        // Top
+        for i in 0..4 {
+            let position = [
+                0.5 - (i % 4 > 1) as i32 as f32,
+                -0.5,
+                0.5 - ((i + 3) % 4 > 1) as i32 as f32,
+            ];
+            let tex_coord = [(4.0 + position[0] + 0.5) / 6.0, position[2] + 0.5];
+
+            vertices.push(Vertex {
+                normal: [0.0, -1.0, 0.0],
+                position,
+                tex_coord,
+            });
+        }
+        // Bottom
+        for i in 0..4 {
+            let position = [
+                0.5 - (i % 4 > 1) as i32 as f32,
+                0.5,
+                0.5 - ((i + 1) % 4 > 1) as i32 as f32,
+            ];
+            let tex_coord = [(5.0 + position[0] + 0.5) / 6.0, position[2] + 0.5];
+
+            vertices.push(Vertex {
+                normal: [0.0, 1.0, 0.0],
+                position,
+                tex_coord,
+            });
+        }
+        println!("{}", vertices.len());
+
+        let mut indices: Vec<u32> = Vec::new();
+        for i in 0..6 {
+            indices.append(&mut vec![i * 4, i * 4 + 1, (i * 4) + 2]);
+            indices.append(&mut vec![i * 4, i * 4 + 2, i * 4 + 3]);
+        }
+        println!("{:?}", indices);
+        // let face_normals = [
+        //     [0.0, 0.0, 1.0],  // Front face
+        //     [0.0, 0.0, -1.0], // Back face
+        //     [-1.0, 0.0, 0.0], // Left face
+        //     [1.0, 0.0, 0.0],  // Right face
+        //     [0.0, 1.0, 0.0],  // Top face
+        //     [0.0, -1.0, 0.0], // Bottom face
+        // ];
+        // let vertex_to_faces = [
+        //     vec![0, 2, 4], // Top-left-front
+        //     vec![0, 3, 4], // Top-right-front
+        //     vec![1, 2, 4], // Top-left-back
+        //     vec![1, 3, 4], // Top-right-back
+        //     vec![0, 2, 5], // Bottom-left-front
+        //     vec![0, 3, 5], // Bottom-right-front
+        //     vec![1, 2, 5], // Bottom-left-back
+        //     vec![1, 3, 5], // Bottom-right-back
+        // ];
+        //
+        // for i in 0..8 {
+        //     let position = [
+        //         0.5 - (((i % 4) > 1) as i32) as f32,
+        //         0.5 - (((i > 3) as i32) as f32),
+        //         0.5 - ((((i + 1) % 4) > 1) as i32) as f32,
+        //     ];
+        //
+        //     // Average the normals of adjacent faces
+        //     let mut normal = [0.0, 0.0, 0.0];
+        //     for &face in &vertex_to_faces[i] {
+        //         normal[0] += face_normals[face][0];
+        //         normal[1] += face_normals[face][1];
+        //         normal[2] += face_normals[face][2];
+        //     }
+        //
+        //     // Normalize the resulting normal vector
+        //     let length = ((normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2])
+        //         as f32)
+        //         .sqrt();
+        //     normal[0] /= length;
+        //     normal[1] /= length;
+        //     normal[2] /= length;
+        //
+        //     let tex_coord = [(i as f32 % 4.0) * 1.0 / 6.0, position[1] + 0.5];
+        //
+        //     vertices.push(Vertex {
+        //         normal,
+        //         position,
+        //         tex_coord,
+        //     });
+        // }
+        // let mut indices: Vec<u32> = Vec::new();
+        // indices.append(&mut vec![0, 1, 2, 0, 2, 3]);
+        // indices.append(&mut vec![4, 6, 5, 4, 7, 6]);
+        // for i in 0..4 {
+        //     indices.append(&mut vec![i, i + 4, (i + 1) % 4]);
+        //     indices.append(&mut vec![(i + 1) % 4, i + 4, ((i + 1) % 4 + 4)]);
+        // }
+
         let mesh = Mesh {
             vertices,
             indices,
             material_idx: 0,
         };
+        let mut mat = Material::default();
+        if let Some(path) = texture_path {
+            let texture = load_texture(path);
+            mat.base_color_texture = Some(texture);
+        }
 
         let model = Model {
             meshes: vec![mesh],
-            mats: vec![Material::default()],
+            mats: vec![mat],
         };
+
         Object {
             model,
             position,
             rotation,
             scale,
+            physics: None,
         }
+    }
+    pub fn update_physics(&mut self, delta: f32) {
+        self.position = self
+            .physics
+            .as_mut()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .update_physics(delta);
     }
     // Renders to Framebuffer using its properties and given view-projection matrix
     pub fn render(&self, fb: &mut Framebuffer, depth_buffer: &mut Framebuffer, view_proj: &Matrix) {
@@ -191,9 +304,9 @@ fn draw_triangle(
     v0: &Vertex,
     v1: &Vertex,
     v2: &Vertex,
-    col: u32,
     mvp: &Matrix,
     invmod: &Matrix,
+    mat: &Material,
 ) {
     let v0_clip = project(&v0.position, mvp);
     let v1_clip = project(&v1.position, mvp);
@@ -223,6 +336,7 @@ fn draw_triangle(
                 let bary0 = a0 * area_rep;
                 let bary1 = a1 * area_rep;
                 let bary2 = a2 * area_rep;
+                let correction = 1.0 / (bary0 * v0_clip.1 + bary1 * v1_clip.1 + bary2 * v2_clip.1);
 
                 //println!("{:?}", v1_clip.0);
                 let z = (v0_clip.0[2] * bary0) + (v1_clip.0[2] * bary1) + (v2_clip.0[2] * bary2);
@@ -233,15 +347,18 @@ fn draw_triangle(
                     depth_buffer.set_pixel_f32(x, y, z);
                     // Directly interpolate normals
                     let normal = [
-                        v0.normal[0] * v0_clip.1 * bary0
+                        (v0.normal[0] * v0_clip.1 * bary0
                             + v1.normal[0] * v1_clip.1 * bary1
-                            + v2.normal[0] * v2_clip.1 * bary2,
-                        v0.normal[1] * v0_clip.1 * bary0
+                            + v2.normal[0] * v2_clip.1 * bary2)
+                            * correction,
+                        (v0.normal[1] * v0_clip.1 * bary0
                             + v1.normal[1] * v1_clip.1 * bary1
-                            + v2.normal[1] * v2_clip.1 * bary2,
-                        v0.normal[2] * v0_clip.1 * bary0
+                            + v2.normal[1] * v2_clip.1 * bary2)
+                            * correction,
+                        (v0.normal[2] * v0_clip.1 * bary0
                             + v1.normal[2] * v1_clip.1 * bary1
-                            + v2.normal[2] * v2_clip.1 * bary2,
+                            + v2.normal[2] * v2_clip.1 * bary2)
+                            * correction,
                     ];
 
                     // Normalize the interpolated normal
@@ -250,17 +367,47 @@ fn draw_triangle(
 
                     let normal = transform_normal(normal, &invmod);
 
+                    let tex = [
+                        (v0.tex_coord[0] * v0_clip.1 * bary0
+                            + v1.tex_coord[0] * v1_clip.1 * bary1
+                            + v2.tex_coord[0] * v2_clip.1 * bary2)
+                            * correction,
+                        (v0.tex_coord[1] * v0_clip.1 * bary0
+                            + v1.tex_coord[1] * v1_clip.1 * bary1
+                            + v2.tex_coord[1] * v2_clip.1 * bary2)
+                            * correction,
+                    ];
+
                     // Scale the normal to color space
                     let norm_col = [
                         ((normal[0] * 0.5 + 0.5) * 255.99) as u8,
                         ((normal[1] * 0.5 + 0.5) * 255.99) as u8,
                         ((normal[2] * 0.5 + 0.5) * 255.99) as u8,
                     ];
+
+                    let mut base_color = mat.base_col;
+                    if let Some(base_color_texture) = &mat.base_color_texture {
+                        let text = base_color_texture.sample_pixel(tex[0], tex[1]);
+                        base_color = [
+                            base_color[0] * text[0],
+                            base_color[1] * text[1],
+                            base_color[2] * text[2],
+                            base_color[3] * text[3],
+                        ];
+                    };
+                    let light = [0.3, -0.7, 0.5];
+                    let intensity =
+                        (normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2])
+                            .clamp(0.2, 1.0);
+                    let color = rgb_to_u32(
+                        (base_color[0] * intensity * 255.99) as u8,
+                        (base_color[1] * intensity * 255.99) as u8,
+                        (base_color[2] * intensity * 255.99) as u8,
+                    );
                     fb.set_pixel(
-                        x,
-                        y,
-                        // 0x0000ff,
-                        rgb_to_u32(norm_col[0] as u8, norm_col[1] as u8, norm_col[2] as u8),
+                        x, y,
+                        color,
+                        //rgb_to_u32(norm_col[0] as u8, norm_col[1] as u8, norm_col[2] as u8),
                     );
                 }
             }
@@ -286,9 +433,9 @@ fn draw_model(
                 &v0,
                 &v1,
                 &v2,
-                rgb_to_u32(120, 120, 255),
                 mvp,
                 invmod,
+                &model.mats[mesh.material_idx],
             );
         }
     }
