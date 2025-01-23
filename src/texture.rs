@@ -53,8 +53,8 @@ impl Texture {
         let x = x as u32;
         let y = y as u32;
         // println!("{} {}", x, y);
-        let x = x % (self.width - 1);
-        let y = y % (self.height - 1);
+        let x = x % (self.width);
+        let y = y % (self.height);
         // println!("{} {}", x, y);
         let x = x as usize;
         let y = y as usize;

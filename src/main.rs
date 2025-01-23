@@ -45,7 +45,7 @@ fn main() {
         [0.0, -0.5, 0.0],
         [
             0.0f32.to_radians(),
-            0.0f32.to_radians(),
+            180.0f32.to_radians(),
             180.0f32.to_radians(),
         ],
         [1.0, 1.0, 1.0],
@@ -54,7 +54,7 @@ fn main() {
         [0.0, -0.0, 0.0],
         [0.0f32.to_radians(), 0.0, 0.0],
         [2.0, 2.0, 2.0],
-        Some("./assets/strip.png"),
+        Some("./assets/grass.png"),
     )
     .with_physics(Physics::new(6.0e12, false, GravType::Space));
     // let mut cube2 = object::Object::cube(
@@ -68,8 +68,21 @@ fn main() {
     let mut depth_buffer =
         Framebuffer::new(window.framebuffer().width(), window.framebuffer().height());
 
+    fn press() {
+        println!("press")
+    }
+    fn hold() {
+        println!("hold")
+    }
+    fn release() {
+        println!("release")
+    }
+    window.set_callback(minifb::Key::Escape, press, hold, release);
+
     while !window.should_close() {
         let start = timer.elapsed().unwrap().as_millis();
+
+        window.process_input();
         // Process buffers
         let fb = window.framebuffer();
         if depth_buffer.width() != fb.width() || depth_buffer.height() != fb.height() {
@@ -93,7 +106,6 @@ fn main() {
         let elapsed = timer.elapsed().unwrap().as_secs_f32();
         helmet.rotation[1] = elapsed;
         cube.rotation[1] = elapsed;
-        cube.rotation[0] = elapsed;
         shark.rotation[1] = elapsed;
         turtle.rotation[1] = elapsed;
         let delta = (timer.elapsed().unwrap().as_millis() - start) as f32 / 1000.0;
@@ -105,7 +117,7 @@ fn main() {
         //Render objects
 
         shark.render(fb, &mut depth_buffer, &view_proj);
-        //cube.render(fb, &mut depth_buffer, &view_proj);
+        cube.render(fb, &mut depth_buffer, &view_proj);
         // cube2.render(fb, &mut depth_buffer, &view_proj);
         turtle.render(fb, &mut depth_buffer, &view_proj);
         //helmet.render(fb, &mut depth_buffer, &view_proj);

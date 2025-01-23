@@ -387,7 +387,7 @@ fn draw_triangle(
 
                     let mut base_color = mat.base_col;
                     if let Some(base_color_texture) = &mat.base_color_texture {
-                        let text = base_color_texture.sample_pixel(tex[0], tex[1]);
+                        let text = base_color_texture.get_pixel(tex[0], tex[1]);
                         base_color = [
                             base_color[0] * text[0],
                             base_color[1] * text[1],

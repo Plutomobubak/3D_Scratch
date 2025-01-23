@@ -1,8 +1,18 @@
 use std::usize;
 
+use minifb::Key;
+
+#[derive(Clone, Copy)]
+enum State {
+    PRESSED,
+    HELD,
+    RELEASED,
+}
+
 pub struct Window {
     window: minifb::Window,
     framebuffer: Framebuffer,
+    callbacks: [(State, fn(), fn(), fn()); 300],
 }
 pub struct Framebuffer {
     data: Vec<u32>,
@@ -20,6 +30,7 @@ impl Window {
 
         Window {
             window,
+            callbacks: [(State::RELEASED, || {}, || {}, || {}); 300],
             framebuffer: Framebuffer::new(w, h),
         }
     }
@@ -29,6 +40,42 @@ impl Window {
 
     pub fn should_close(&self) -> bool {
         !self.window.is_open()
+    }
+    pub fn set_callback(&mut self, key: Key, press: fn(), hold: fn(), release: fn()) {
+        let i: usize = key as usize;
+        self.callbacks[i] = (State::RELEASED, press, hold, release);
+    }
+    pub fn process_input(&mut self) {
+        let mut h: Vec<usize> = Vec::new();
+        self.window.get_keys().iter().for_each(|k| {
+            let i = *k as usize;
+            h.push(i);
+            let mut k = &mut self.callbacks[i];
+            match k.0 {
+                State::RELEASED => {
+                    k.1();
+                    k.0 = State::PRESSED;
+                }
+                State::PRESSED => {
+                    k.0 = State::HELD;
+                }
+                State::HELD => {
+                    k.2();
+                }
+            }
+        });
+        for l in 0..self.callbacks.len() {
+            if !h.contains(&l) {
+                let k = &mut self.callbacks[l];
+                match k.0 {
+                    State::HELD | State::PRESSED => {
+                        k.3();
+                        k.0 = State::RELEASED;
+                    }
+                    State::RELEASED => {}
+                }
+            }
+        }
     }
 
     pub fn update(&mut self) {
