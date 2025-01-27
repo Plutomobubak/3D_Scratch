@@ -42,7 +42,7 @@ impl Object {
 
         // Sides
         for i in 0..4 {
-            println!("{}", i);
+            // println!("{}", i);
             for j in 0..4 {
                 let mut position = [0.0; 3];
                 if (i % 2) == 1 {
@@ -67,7 +67,7 @@ impl Object {
                     ((i + ((j + 1) % 4 > 1) as i32) as f32) / 6.0,
                     position[1] + 0.5,
                 ];
-                println!("{:?} {:?}", position, tex_coord);
+                // println!("{:?} {:?}", position, tex_coord);
 
                 vertices.push(Vertex {
                     normal,
@@ -106,71 +106,14 @@ impl Object {
                 tex_coord,
             });
         }
-        println!("{}", vertices.len());
+        // println!("{}", vertices.len());
 
         let mut indices: Vec<u32> = Vec::new();
         for i in 0..6 {
             indices.append(&mut vec![i * 4, i * 4 + 1, (i * 4) + 2]);
             indices.append(&mut vec![i * 4, i * 4 + 2, i * 4 + 3]);
         }
-        println!("{:?}", indices);
-        // let face_normals = [
-        //     [0.0, 0.0, 1.0],  // Front face
-        //     [0.0, 0.0, -1.0], // Back face
-        //     [-1.0, 0.0, 0.0], // Left face
-        //     [1.0, 0.0, 0.0],  // Right face
-        //     [0.0, 1.0, 0.0],  // Top face
-        //     [0.0, -1.0, 0.0], // Bottom face
-        // ];
-        // let vertex_to_faces = [
-        //     vec![0, 2, 4], // Top-left-front
-        //     vec![0, 3, 4], // Top-right-front
-        //     vec![1, 2, 4], // Top-left-back
-        //     vec![1, 3, 4], // Top-right-back
-        //     vec![0, 2, 5], // Bottom-left-front
-        //     vec![0, 3, 5], // Bottom-right-front
-        //     vec![1, 2, 5], // Bottom-left-back
-        //     vec![1, 3, 5], // Bottom-right-back
-        // ];
-        //
-        // for i in 0..8 {
-        //     let position = [
-        //         0.5 - (((i % 4) > 1) as i32) as f32,
-        //         0.5 - (((i > 3) as i32) as f32),
-        //         0.5 - ((((i + 1) % 4) > 1) as i32) as f32,
-        //     ];
-        //
-        //     // Average the normals of adjacent faces
-        //     let mut normal = [0.0, 0.0, 0.0];
-        //     for &face in &vertex_to_faces[i] {
-        //         normal[0] += face_normals[face][0];
-        //         normal[1] += face_normals[face][1];
-        //         normal[2] += face_normals[face][2];
-        //     }
-        //
-        //     // Normalize the resulting normal vector
-        //     let length = ((normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2])
-        //         as f32)
-        //         .sqrt();
-        //     normal[0] /= length;
-        //     normal[1] /= length;
-        //     normal[2] /= length;
-        //
-        //     let tex_coord = [(i as f32 % 4.0) * 1.0 / 6.0, position[1] + 0.5];
-        //
-        //     vertices.push(Vertex {
-        //         normal,
-        //         position,
-        //         tex_coord,
-        //     });
-        // }
-        // let mut indices: Vec<u32> = Vec::new();
-        // indices.append(&mut vec![0, 1, 2, 0, 2, 3]);
-        // indices.append(&mut vec![4, 6, 5, 4, 7, 6]);
-        // for i in 0..4 {
-        //     indices.append(&mut vec![i, i + 4, (i + 1) % 4]);
-        //     indices.append(&mut vec![(i + 1) % 4, i + 4, ((i + 1) % 4 + 4)]);
-        // }
+        // println!("{:?}", indices);
 
         let mesh = Mesh {
             vertices,
@@ -213,32 +156,7 @@ impl Object {
             self.position[1] * -1.0,
             self.position[2] * -1.0,
         ];
-        let pos_matrix = Matrix::view(pos);
-        // Apply rotation
-        let sina = self.rotation[0].sin();
-        let cosa = self.rotation[0].cos();
-        let sinb = self.rotation[1].sin();
-        let cosb = self.rotation[1].cos();
-        let sinc = self.rotation[2].sin();
-        let cosc = self.rotation[2].cos();
-
-        let rot_matrix: Matrix = vec![
-            vec![
-                cosb * cosc,
-                (sina * sinb * cosc) - (cosa * sinc),
-                (cosa * sinb * cosc) + (sina * sinc),
-                0.0,
-            ],
-            vec![
-                cosb * sinc,
-                (sina * sinb * sinc) + (cosa * cosc),
-                (cosa * sinb * sinc) - (sina * cosc),
-                0.0,
-            ],
-            vec![-sinb, sina * cosb, cosa * cosb, 0.0],
-            vec![0.0, 0.0, 0.0, 1.0],
-        ]
-        .into();
+        let pos_matrix = Matrix::trans(pos).rotate(self.rotation);
         // Scale
         let scale_matrix: Matrix = vec![
             vec![self.scale[0], 0.0, 0.0, 0.0],
@@ -247,7 +165,7 @@ impl Object {
             vec![0.0, 0.0, 0.0, 1.0],
         ]
         .into();
-        let mod_matrix = pos_matrix * (rot_matrix * scale_matrix);
+        let mod_matrix = pos_matrix * scale_matrix;
         let invmod = mod_matrix.inverse().transpose();
         let mvp = view_proj * &mod_matrix;
         draw_model(fb, depth_buffer, &self.model, &mvp, &invmod);

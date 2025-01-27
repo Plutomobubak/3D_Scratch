@@ -45,20 +45,14 @@ impl Texture {
     pub fn get_pixel(&self, x: f32, y: f32) -> [f32; 4] {
         let mut x = x;
         let mut y = y;
-        // println!("{} {}", self.width, self.height);
-        // println!("{} {}", x, y);
         x *= self.width as f32;
         y *= self.height as f32;
-        //println!("{} {}", x, y);
         let x = x as u32;
         let y = y as u32;
-        // println!("{} {}", x, y);
         let x = x % (self.width);
         let y = y % (self.height);
-        // println!("{} {}", x, y);
         let x = x as usize;
         let y = y as usize;
-        //println!("{} {}", x, y);
         match self.channels {
             4 => {
                 let data: &Vec<(u8, u8, u8, u8)> = unsafe { std::mem::transmute(&self.data) };

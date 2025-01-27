@@ -97,7 +97,7 @@ impl Add<f32> for Matrix {
 }
 impl Matrix {
     // Returns view matrix defined by z_offset
-    pub fn view(offset: [f32; 3]) -> Matrix {
+    pub fn trans(offset: [f32; 3]) -> Matrix {
         vec![
             vec![1.0, 0.0, 0.0, 0.0],
             vec![0.0, 1.0, 0.0, 0.0],
@@ -105,6 +105,34 @@ impl Matrix {
             vec![offset[0], offset[1], offset[2], 1.0],
         ]
         .into()
+    }
+    pub fn rotate(self, rotation: [f32; 3]) -> Matrix {
+        // Apply rotation
+        let sina = rotation[0].sin();
+        let cosa = rotation[0].cos();
+        let sinb = rotation[1].sin();
+        let cosb = rotation[1].cos();
+        let sinc = rotation[2].sin();
+        let cosc = rotation[2].cos();
+
+        let rot_matrix: Matrix = vec![
+            vec![
+                cosb * cosc,
+                (sina * sinb * cosc) - (cosa * sinc),
+                (cosa * sinb * cosc) + (sina * sinc),
+                0.0,
+            ],
+            vec![
+                cosb * sinc,
+                (sina * sinb * sinc) + (cosa * cosc),
+                (cosa * sinb * sinc) - (sina * cosc),
+                0.0,
+            ],
+            vec![-sinb, sina * cosb, cosa * cosb, 0.0],
+            vec![0.0, 0.0, 0.0, 1.0],
+        ]
+        .into();
+        self * rot_matrix
     }
     // Creates projection matrix by given params
     pub fn projection(fov_y: f32, aspect_ratio: f32, near: f32, far: f32) -> Matrix {

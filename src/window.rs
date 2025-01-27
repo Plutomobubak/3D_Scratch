@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::usize;
 
 use minifb::Key;
@@ -12,7 +13,7 @@ enum State {
 pub struct Window {
     window: minifb::Window,
     framebuffer: Framebuffer,
-    callbacks: [(State, fn(), fn(), fn()); 300],
+    callbacks: Vec<(State, Box<dyn FnMut()>, Box<dyn FnMut()>, Box<dyn FnMut()>)>,
 }
 pub struct Framebuffer {
     data: Vec<u32>,
@@ -27,10 +28,20 @@ impl Window {
         };
 
         let window = minifb::Window::new(name, w, h, options).expect("Failed to create window");
+        let mut callbacks: Vec<(State, Box<dyn FnMut()>, Box<dyn FnMut()>, Box<dyn FnMut()>)> =
+            Vec::new();
+        for _ in 0..300 {
+            callbacks.push((
+                State::RELEASED,
+                Box::new(|| {}),
+                Box::new(|| {}),
+                Box::new(|| {}),
+            ));
+        }
 
         Window {
             window,
-            callbacks: [(State::RELEASED, || {}, || {}, || {}); 300],
+            callbacks,
             framebuffer: Framebuffer::new(w, h),
         }
     }
@@ -41,16 +52,30 @@ impl Window {
     pub fn should_close(&self) -> bool {
         !self.window.is_open()
     }
-    pub fn set_callback(&mut self, key: Key, press: fn(), hold: fn(), release: fn()) {
+    pub fn set_callback(
+        &mut self,
+        key: Key,
+        press: Option<Box<dyn FnMut()>>,
+        hold: Option<Box<dyn FnMut()>>,
+        release: Option<Box<dyn FnMut()>>,
+    ) {
         let i: usize = key as usize;
-        self.callbacks[i] = (State::RELEASED, press, hold, release);
+        if let Some(press) = press {
+            self.callbacks[i].1 = press;
+        }
+        if let Some(hold) = hold {
+            self.callbacks[i].2 = hold;
+        }
+        if let Some(release) = release {
+            self.callbacks[i].3 = release;
+        }
     }
     pub fn process_input(&mut self) {
         let mut h: Vec<usize> = Vec::new();
         self.window.get_keys().iter().for_each(|k| {
             let i = *k as usize;
             h.push(i);
-            let mut k = &mut self.callbacks[i];
+            let k = &mut self.callbacks[i];
             match k.0 {
                 State::RELEASED => {
                     k.1();
