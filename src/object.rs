@@ -1,4 +1,5 @@
 use crate::{
+    draw::*,
     model::{Material, Mesh, Model, Vertex},
     physics::Physics,
     texture::{load_texture, Texture},
@@ -9,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 pub struct Object {
     pub model: Model,
-    position: [f32; 3],
+    pub position: [f32; 3],
     pub rotation: [f32; 3],
     pub scale: [f32; 3],
     pub physics: Option<Arc<Mutex<Physics>>>,
@@ -148,6 +149,144 @@ impl Object {
             .unwrap()
             .update_physics(delta);
     }
+    pub fn raycast(
+        &self,
+        ray_origin: [f32; 3],
+        ray_dir: [f32; 3],
+        dist: f32,
+        fb: &mut Framebuffer,
+        depth_buffer: &mut Framebuffer,
+        mvp: &Matrix,
+        draw: bool,
+    ) -> f32 {
+        let mut mind = dist;
+        let mut d0: Vertex = Vertex {
+            position: [0.0; 3],
+            normal: [0.0; 3],
+            tex_coord: [0.0; 2],
+        };
+        let mut d1: Vertex = Vertex {
+            position: [0.0; 3],
+            normal: [0.0; 3],
+            tex_coord: [0.0; 2],
+        };
+        let mut d2: Vertex = Vertex {
+            position: [0.0; 3],
+            normal: [0.0; 3],
+            tex_coord: [0.0; 2],
+        };
+        let mut minint = Matrix::identity();
+        for mesh in self.model.meshes.iter() {
+            for i in 0..(mesh.indices.len() / 3) {
+                let scale: Matrix = vec![
+                    vec![self.scale[0], 0.0, 0.0, 0.0],
+                    vec![0.0, self.scale[1], 0.0, 0.0],
+                    vec![0.0, 0.0, self.scale[2], 0.0],
+                    vec![0.0, 0.0, 0.0, 1.0],
+                ]
+                .into();
+                let pos_matrix = (Matrix::trans(self.position).rotate(self.rotation)) * scale;
+                let mut v0: Matrix = vec![mesh.vertices[mesh.indices[i * 3] as usize]
+                    .position
+                    .to_vec()]
+                .into();
+                v0[0].push(1.0);
+                v0 = &pos_matrix * &v0;
+                v0 = vec![v0[0][0..3].to_vec()].into();
+                let mut v1: Matrix = vec![mesh.vertices[mesh.indices[i * 3 + 1] as usize]
+                    .position
+                    .to_vec()]
+                .into();
+                v1[0].push(1.0);
+                v1 = &pos_matrix * &v1;
+                v1 = vec![v1[0][0..3].to_vec()].into();
+                let mut v2: Matrix = vec![mesh.vertices[mesh.indices[i * 3 + 2] as usize]
+                    .position
+                    .to_vec()]
+                .into();
+                v2[0].push(1.0);
+                v2 = &pos_matrix * &v2;
+                v2 = vec![v2[0][0..3].to_vec()].into();
+                let origin: Matrix = vec![ray_origin.to_vec()].into();
+                let ray: Matrix = vec![ray_dir.to_vec()].into();
+                let e1 = &v1 - &v0;
+                let e2 = &v2 - &v0;
+                let mat: Matrix = vec![e1[0].clone(), e2[0].clone(), ray[0].clone()].into();
+                let det = mat.det();
+                let inv_det = 1.0 / det;
+                let s = &origin - &v0;
+                let mat_u: Matrix = vec![s[0].clone(), e2[0].clone(), ray[0].clone()].into();
+                let u = mat_u.det() * inv_det;
+                if !(0.0..=1.0).contains(&u) {
+                    continue;
+                }
+                let mat_v: Matrix = vec![e1[0].clone(), s[0].clone(), ray[0].clone()].into();
+                let v = mat_v.det() * inv_det;
+                if !(0.0..=1.0).contains(&v) {
+                    continue;
+                }
+                let mat_t: Matrix = vec![e1[0].clone(), e2[0].clone(), s[0].clone()].into();
+                let t = mat_t.det() * inv_det;
+                if t > f32::EPSILON {
+                    let intersection_point = &origin + &(ray.clone() * (-t));
+                    // println!("{:?}", intersection_point[0]);
+                    let dmat = &intersection_point - &origin;
+                    let d = (dmat[0][0] * dmat[0][0]
+                        + dmat[0][1] * dmat[0][1]
+                        + dmat[0][2] * dmat[0][2])
+                        .sqrt();
+                    if d < mind {
+                        mind = d;
+                        d0 = mesh.vertices[mesh.indices[i * 3] as usize];
+                        d1 = mesh.vertices[mesh.indices[i * 3 + 1] as usize];
+                        d2 = mesh.vertices[mesh.indices[i * 3 + 2] as usize];
+                        minint = vec![vec![
+                            intersection_point[0][0] * -1.0,
+                            intersection_point[0][1] * -1.0,
+                            intersection_point[0][2] * -1.0,
+                        ]]
+                        .into();
+                        if draw {
+                            let mut origin = origin * -1.0;
+                            origin[0][2] += 0.01;
+                            let inter = intersection_point * -1.0;
+                            draw_line(fb, depth_buffer, &origin.into(), &inter.into(), mvp);
+                        }
+                    }
+                }
+            }
+        }
+        if mind < dist {
+            let mat = Material {
+                base_col: [1.0, 0.0, 0.0, 1.0],
+                ..Default::default()
+            };
+            d0.position = ((&minint) + &Matrix::from(vec![vec![-0.05, -0.05, 0.1]]))[0]
+                .clone()
+                .try_into()
+                .unwrap();
+            d1.position = ((&minint) + &Matrix::from(vec![vec![0.05, -0.05, 0.1]]))[0]
+                .clone()
+                .try_into()
+                .unwrap();
+            d2.position = ((&minint) + &Matrix::from(vec![vec![0.0, 0.1, 0.1]]))[0]
+                .clone()
+                .try_into()
+                .unwrap();
+
+            draw_triangle(
+                fb,
+                depth_buffer,
+                &d0,
+                &d1,
+                &d2,
+                mvp,
+                &Matrix::identity(),
+                &mat,
+            );
+        }
+        mind
+    }
     // Renders to Framebuffer using its properties and given view-projection matrix
     pub fn render(&self, fb: &mut Framebuffer, depth_buffer: &mut Framebuffer, view_proj: &Matrix) {
         // Transform by position
@@ -172,189 +311,3 @@ impl Object {
     }
 }
 //
-fn rgb_to_u32(r: u8, g: u8, b: u8) -> u32 {
-    let (r, g, b) = (r as u32, g as u32, b as u32);
-    (r << 16) | (g << 8) | b
-}
-fn transform_normal(normal: [f32; 3], invmod: &Matrix) -> [f32; 3] {
-    // Convert normal to homogeneous coordinates (4D)
-    let normal_homogeneous = [normal[0], normal[1], normal[2], 0.0]; // The fourth component is 0 for normals
-
-    // Multiply by the inverse-transpose matrix (4x4)
-
-    [
-        normal_homogeneous[0] * invmod[0][0]
-            + normal_homogeneous[1] * invmod[1][0]
-            + normal_homogeneous[2] * invmod[2][0]
-            + normal_homogeneous[3] * invmod[3][0],
-        normal_homogeneous[0] * invmod[0][1]
-            + normal_homogeneous[1] * invmod[1][1]
-            + normal_homogeneous[2] * invmod[2][1]
-            + normal_homogeneous[3] * invmod[3][1],
-        normal_homogeneous[0] * invmod[0][2]
-            + normal_homogeneous[1] * invmod[1][2]
-            + normal_homogeneous[2] * invmod[2][2]
-            + normal_homogeneous[3] * invmod[3][2],
-    ]
-}
-// This shit
-fn project(p: &[f32; 3], mvp: &Matrix) -> ([f32; 3], f32) {
-    let mut p4: Matrix = vec![p.to_vec()].into();
-    p4[0].push(1.0);
-    let proj_pos = &(mvp * &p4)[0];
-    let rec = 1.0 / proj_pos[3];
-    let rec_pos = proj_pos.iter().map(|a| a * rec).collect::<Vec<_>>();
-    ([rec_pos[0], rec_pos[1], rec_pos[2]], rec)
-}
-fn clip_to_screen(clip: [f32; 2], screen_size: &Vec<f32>) -> [f32; 2] {
-    [
-        (clip[0] * 0.5 + 0.5) * screen_size[0],
-        (clip[1] * 0.5 + 0.5) * screen_size[1],
-    ]
-}
-// Le trinagle
-fn edge(a: &[f32; 2], b: &[f32; 2], p: &[f32; 2]) -> f32 {
-    ((p[0] - a[0]) * (b[1] - a[1])) - ((p[1] - a[1]) * (b[0] - a[0]))
-}
-fn draw_triangle(
-    fb: &mut Framebuffer,
-    depth_buffer: &mut Framebuffer,
-    v0: &Vertex,
-    v1: &Vertex,
-    v2: &Vertex,
-    mvp: &Matrix,
-    invmod: &Matrix,
-    mat: &Material,
-) {
-    let v0_clip = project(&v0.position, mvp);
-    let v1_clip = project(&v1.position, mvp);
-    let v2_clip = project(&v2.position, mvp);
-
-    let screen_size = vec![fb.width() as f32, fb.height() as f32];
-    let a = clip_to_screen([v0_clip.0[0], v0_clip.0[1]], &screen_size);
-    let b = clip_to_screen([v1_clip.0[0], v1_clip.0[1]], &screen_size);
-    let c = clip_to_screen([v2_clip.0[0], v2_clip.0[1]], &screen_size);
-
-    // println!("{:?}\n{:?}\n{:?}\n", a, b, c);
-
-    let xs = (a[0].min(b[0]).min(c[0]).max(0.0)).floor() as usize;
-    let ys = (a[1].min(b[1]).min(c[1]).max(0.0)).floor() as usize;
-    let xl = (a[0].max(b[0]).max(c[0]).min(screen_size[0] - 1.0)).ceil() as usize;
-    let yl = (a[1].max(b[1]).max(c[1]).min(screen_size[1] - 1.0)).ceil() as usize;
-    for x in xs..xl {
-        for y in ys..yl {
-            let p: [f32; 2] = [x as f32, y as f32];
-            let a0 = edge(&b, &c, &p);
-            let a1 = edge(&c, &a, &p);
-            let a2 = edge(&a, &b, &p);
-
-            let inside = a0 < 0.0 && a1 < 0.0 && a2 < 0.0;
-            if inside {
-                let area_rep = 1.0 / edge(&a, &b, &c);
-                let bary0 = a0 * area_rep;
-                let bary1 = a1 * area_rep;
-                let bary2 = a2 * area_rep;
-                let correction = 1.0 / (bary0 * v0_clip.1 + bary1 * v1_clip.1 + bary2 * v2_clip.1);
-
-                //println!("{:?}", v1_clip.0);
-                let z = (v0_clip.0[2] * bary0) + (v1_clip.0[2] * bary1) + (v2_clip.0[2] * bary2);
-                //println!("{}", z);
-                let d = depth_buffer.get_pixel_f32(x, y);
-
-                if z < d {
-                    depth_buffer.set_pixel_f32(x, y, z);
-                    // Directly interpolate normals
-                    let normal = [
-                        (v0.normal[0] * v0_clip.1 * bary0
-                            + v1.normal[0] * v1_clip.1 * bary1
-                            + v2.normal[0] * v2_clip.1 * bary2)
-                            * correction,
-                        (v0.normal[1] * v0_clip.1 * bary0
-                            + v1.normal[1] * v1_clip.1 * bary1
-                            + v2.normal[1] * v2_clip.1 * bary2)
-                            * correction,
-                        (v0.normal[2] * v0_clip.1 * bary0
-                            + v1.normal[2] * v1_clip.1 * bary1
-                            + v2.normal[2] * v2_clip.1 * bary2)
-                            * correction,
-                    ];
-
-                    // Normalize the interpolated normal
-                    let len = (normal[0].powi(2) + normal[1].powi(2) + normal[2].powi(2)).sqrt();
-                    let normal = [normal[0] / len, normal[1] / len, normal[2] / len];
-
-                    let normal = transform_normal(normal, &invmod);
-
-                    let tex = [
-                        (v0.tex_coord[0] * v0_clip.1 * bary0
-                            + v1.tex_coord[0] * v1_clip.1 * bary1
-                            + v2.tex_coord[0] * v2_clip.1 * bary2)
-                            * correction,
-                        (v0.tex_coord[1] * v0_clip.1 * bary0
-                            + v1.tex_coord[1] * v1_clip.1 * bary1
-                            + v2.tex_coord[1] * v2_clip.1 * bary2)
-                            * correction,
-                    ];
-
-                    // Scale the normal to color space
-                    let norm_col = [
-                        ((normal[0] * 0.5 + 0.5) * 255.99) as u8,
-                        ((normal[1] * 0.5 + 0.5) * 255.99) as u8,
-                        ((normal[2] * 0.5 + 0.5) * 255.99) as u8,
-                    ];
-
-                    let mut base_color = mat.base_col;
-                    if let Some(base_color_texture) = &mat.base_color_texture {
-                        let text = base_color_texture.get_pixel(tex[0], tex[1]);
-                        base_color = [
-                            base_color[0] * text[0],
-                            base_color[1] * text[1],
-                            base_color[2] * text[2],
-                            base_color[3] * text[3],
-                        ];
-                    };
-                    let light = [0.3, -0.7, 0.5];
-                    let intensity =
-                        (normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2])
-                            .clamp(0.2, 1.0);
-                    let color = rgb_to_u32(
-                        (base_color[0] * intensity * 255.99) as u8,
-                        (base_color[1] * intensity * 255.99) as u8,
-                        (base_color[2] * intensity * 255.99) as u8,
-                    );
-                    fb.set_pixel(
-                        x, y,
-                        color,
-                        //rgb_to_u32(norm_col[0] as u8, norm_col[1] as u8, norm_col[2] as u8),
-                    );
-                }
-            }
-        }
-    }
-}
-fn draw_model(
-    fb: &mut Framebuffer,
-    depth_buffer: &mut Framebuffer,
-    model: &Model,
-    mvp: &Matrix,
-    invmod: &Matrix,
-) {
-    for mesh in &model.meshes {
-        for i in 0..(mesh.indices.len() / 3) {
-            let v0 = mesh.vertices[mesh.indices[i * 3] as usize];
-            let v1 = mesh.vertices[mesh.indices[i * 3 + 1] as usize];
-            let v2 = mesh.vertices[mesh.indices[i * 3 + 2] as usize];
-
-            draw_triangle(
-                fb,
-                depth_buffer,
-                &v0,
-                &v1,
-                &v2,
-                mvp,
-                invmod,
-                &model.mats[mesh.material_idx],
-            );
-        }
-    }
-}

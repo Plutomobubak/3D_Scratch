@@ -25,6 +25,11 @@ impl From<Vec<Vec<f32>>> for Matrix {
         Matrix(vec)
     }
 }
+impl Into<[f32; 3]> for Matrix {
+    fn into(self) -> [f32; 3] {
+        [self[0][0], self[0][1], self[0][2]]
+    }
+}
 
 impl Mul for Matrix {
     type Output = Matrix;
@@ -83,6 +88,18 @@ impl Add for Matrix {
         res
     }
 }
+impl Add for &Matrix {
+    type Output = Matrix;
+    fn add(self, rhs: Self) -> Self::Output {
+        let mut res: Matrix = self.clone();
+        for i in 0..self.len() {
+            for j in 0..self[0].len() {
+                res[i][j] += rhs[i][j];
+            }
+        }
+        res
+    }
+}
 impl Add<f32> for Matrix {
     type Output = Matrix;
     fn add(self, scalar: f32) -> Self::Output {
@@ -90,6 +107,18 @@ impl Add<f32> for Matrix {
         for i in 0..self.len() {
             for j in 0..self[0].len() {
                 res[i][j] += scalar;
+            }
+        }
+        res
+    }
+}
+impl Sub for &Matrix {
+    type Output = Matrix;
+    fn sub(self, rhs: Self) -> Self::Output {
+        let mut res: Matrix = self.clone();
+        for i in 0..self.len() {
+            for j in 0..self[0].len() {
+                res[i][j] -= rhs[i][j];
             }
         }
         res
@@ -179,12 +208,12 @@ impl Matrix {
             }
             for j in i + 1..n {
                 let a = res[j][i] / res[i][i];
-                println!("{:?}", a);
+                // println!("{:?}", a);
                 for k in i..res[j].len() {
                     res[j][k] -= res[i][k] * a;
                 }
             }
-            println!("{:?}", res);
+            // println!("{:?}", res);
         }
         (res, swaps)
     }
