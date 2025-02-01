@@ -76,6 +76,17 @@ impl Mul<f32> for Matrix {
         res
     }
 }
+impl Mul<[f32; 3]> for &Matrix {
+    type Output = [f32; 3];
+
+    fn mul(self, v0: [f32; 3]) -> [f32; 3] {
+        let mut v: Matrix = vec![v0.to_vec()].into();
+
+        v[0].push(1.0);
+        v = self * &v;
+        [v[0][0], v[0][1], v[0][2]]
+    }
+}
 impl Add for Matrix {
     type Output = Matrix;
     fn add(self, rhs: Self) -> Self::Output {

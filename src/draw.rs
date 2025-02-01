@@ -80,7 +80,7 @@ pub fn draw_line(
     let mut y = a[1] as i32;
     let xm = b[0] as i32;
     let ym = b[1] as i32;
-    println!("Line from {}, {} to {},{}", x, y, xm, ym);
+    // println!("Line from {}, {} to {},{}", x, y, xm, ym);
     while x != xm || y != ym {
         if x >= 0 && x < screen_size[0] as i32 && y >= 0 && y < screen_size[1] as i32 {
             let z = depth_buffer.get_pixel_f32(x as usize, y as usize);

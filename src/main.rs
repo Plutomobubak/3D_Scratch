@@ -6,9 +6,9 @@ mod texture;
 mod types;
 mod window;
 
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::SystemTime;
-use std::{borrow::Borrow, cell::RefCell};
 
 use draw::draw_line;
 use model::{load_model, Model, Vertex};
@@ -21,15 +21,16 @@ fn rgb_to_u32(r: u8, g: u8, b: u8) -> u32 {
     (r << 16) | (g << 8) | b
 }
 fn rot_to_dir(rot: [f32; 3]) -> [f32; 3] {
-    let mut dir = [rot[1].sin(), rot[0].sin(), -rot[1].cos()];
-    let len = (dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]).sqrt();
+    let cos_pitch = rot[0].cos();
+    let sin_pitch = rot[0].sin();
+    let cos_yaw = rot[1].cos();
+    let sin_yaw = rot[1].sin();
 
-    if len != 0.0 {
-        dir[0] /= len;
-        dir[1] /= len;
-        dir[2] /= len;
-    }
-    dir
+    [
+        cos_pitch * sin_yaw,  // X
+        sin_pitch,            // Y
+        -cos_pitch * cos_yaw, // Z
+    ]
 }
 fn main() {
     let mut window = Window::new("asdf", 512, 512);
@@ -71,7 +72,7 @@ fn main() {
             world.push(
                 object::Object::cube(
                     [i as f32, -2.0, j as f32],
-                    [0.0f32.to_radians(), 0.0, 0.0],
+                    [0.0f32.to_radians(), 0.0f32.to_radians(), 0.0],
                     [1.0, 1.0, 1.0],
                     Some("./assets/grass.png"),
                 ), //.with_physics(Physics::new(6.0e12, false, GravType::Space)),
@@ -90,12 +91,7 @@ fn main() {
             [0.5, 0.5, 0.5],
         ));
     }
-    // let mut cube2 = object::Object::cube(
-    //     [5.0, 0.0, 10.0],
-    //     [0.0f32.to_radians(), 0.0, 0.0],
-    //     [2.0, 2.0, 2.0],
-    // )
-    // .with_physics(Physics::new(6.0e13, false, GravType::Space));
+    let mut dur: Vec<f32> = vec![1000.0; world.len()];
 
     let timer = SystemTime::now();
     let mut depth_buffer =
@@ -103,6 +99,12 @@ fn main() {
 
     let speed = 0.01;
     let rotspeed = 0.002;
+
+    enum Action {
+        MINING,
+        PLACING,
+        NO,
+    }
     let deltat = Rc::new(RefCell::new(0.0));
     let x = Rc::new(RefCell::new(0.0));
     let y = Rc::new(RefCell::new(0.0));
@@ -110,6 +112,7 @@ fn main() {
     let rx = Rc::new(RefCell::new(0.0));
     let ry = Rc::new(RefCell::new(0.0));
     let rz = Rc::new(RefCell::new(0.0));
+    let action = Rc::new(RefCell::new(Action::NO));
 
     let forward = {
         let x = Rc::clone(&x);
@@ -117,10 +120,8 @@ fn main() {
         let ry = Rc::clone(&ry);
         let deltat = Rc::clone(&deltat);
         move || {
-            *z.borrow_mut() +=
-                speed * (ry.borrow_mut().to_owned() as f32).cos() * deltat.borrow_mut().to_owned();
-            *x.borrow_mut() +=
-                speed * (ry.borrow_mut().to_owned() as f32).sin() * deltat.borrow_mut().to_owned();
+            *z.borrow_mut() += speed * (*ry.borrow() as f32).cos() * *deltat.borrow();
+            *x.borrow_mut() += speed * (*ry.borrow() as f32).sin() * *deltat.borrow();
         }
     };
     let backward = {
@@ -129,24 +130,22 @@ fn main() {
         let ry = Rc::clone(&ry);
         let deltat = Rc::clone(&deltat);
         move || {
-            *z.borrow_mut() -=
-                speed * (ry.borrow_mut().to_owned() as f32).cos() * deltat.borrow_mut().to_owned();
-            *x.borrow_mut() -=
-                speed * (ry.borrow_mut().to_owned() as f32).sin() * deltat.borrow_mut().to_owned();
+            *z.borrow_mut() -= speed * (*ry.borrow() as f32).cos() * *deltat.borrow();
+            *x.borrow_mut() -= speed * (*ry.borrow() as f32).sin() * *deltat.borrow();
         }
     };
     let up = {
         let deltat = Rc::clone(&deltat);
         let y = Rc::clone(&y);
         move || {
-            *y.borrow_mut() += speed * deltat.borrow_mut().to_owned();
+            *y.borrow_mut() += speed * *deltat.borrow();
         }
     };
     let down = {
         let deltat = Rc::clone(&deltat);
         let y = Rc::clone(&y);
         move || {
-            *y.borrow_mut() -= speed * deltat.borrow_mut().to_owned();
+            *y.borrow_mut() -= speed * *deltat.borrow();
         }
     };
     let links = {
@@ -155,17 +154,15 @@ fn main() {
         let ry = Rc::clone(&ry);
         let deltat = Rc::clone(&deltat);
         move || {
-            *x.borrow_mut() +=
-                speed * (ry.borrow_mut().to_owned() as f32).cos() * deltat.borrow_mut().to_owned();
-            *z.borrow_mut() -=
-                speed * (ry.borrow_mut().to_owned() as f32).sin() * deltat.borrow_mut().to_owned();
+            *x.borrow_mut() += speed * (*ry.borrow() as f32).cos() * *deltat.borrow();
+            *z.borrow_mut() -= speed * (*ry.borrow() as f32).sin() * *deltat.borrow();
         }
     };
     let llinks = {
         let ry = Rc::clone(&ry);
         let deltat = Rc::clone(&deltat);
         move || {
-            *ry.borrow_mut() += rotspeed * deltat.borrow_mut().to_owned();
+            *ry.borrow_mut() += rotspeed * *deltat.borrow();
         }
     };
     let rechts = {
@@ -174,63 +171,60 @@ fn main() {
         let ry = Rc::clone(&ry);
         let deltat = Rc::clone(&deltat);
         move || {
-            *x.borrow_mut() -=
-                speed * (ry.borrow_mut().to_owned() as f32).cos() * deltat.borrow_mut().to_owned();
-            *z.borrow_mut() +=
-                speed * (ry.borrow_mut().to_owned() as f32).sin() * deltat.borrow_mut().to_owned();
+            *x.borrow_mut() -= speed * (*ry.borrow() as f32).cos() * *deltat.borrow();
+            *z.borrow_mut() += speed * (*ry.borrow() as f32).sin() * *deltat.borrow();
         }
     };
     let lrechts = {
         let ry = Rc::clone(&ry);
         let deltat = Rc::clone(&deltat);
         move || {
-            *ry.borrow_mut() -= rotspeed * deltat.borrow_mut().to_owned();
+            *ry.borrow_mut() -= rotspeed * *deltat.borrow();
         }
     };
     let ldown = {
         let rx = Rc::clone(&rx);
         let deltat = Rc::clone(&deltat);
         move || {
-            *rx.borrow_mut() += rotspeed * deltat.borrow_mut().to_owned();
+            *rx.borrow_mut() += rotspeed * *deltat.borrow();
         }
     };
     let lup = {
         let rx = Rc::clone(&rx);
         let deltat = Rc::clone(&deltat);
         move || {
-            *rx.borrow_mut() -= rotspeed * deltat.borrow_mut().to_owned();
+            *rx.borrow_mut() -= rotspeed * *deltat.borrow();
         }
     };
-    let lw = {
-        let rz = Rc::clone(&rz);
-        let deltat = Rc::clone(&deltat);
+    let mine = {
+        let action = Rc::clone(&action);
         move || {
-            *rz.borrow_mut() -= rotspeed * deltat.borrow_mut().to_owned();
+            *action.borrow_mut() = Action::MINING;
         }
     };
-    let ls = {
-        let rz = Rc::clone(&rz);
-        let deltat = Rc::clone(&deltat);
+    let place = {
+        let action = Rc::clone(&action);
         move || {
-            *rz.borrow_mut() += rotspeed * deltat.borrow_mut().to_owned();
+            *action.borrow_mut() = Action::PLACING;
         }
     };
     window.set_callback(minifb::Key::W, None, Some(Box::new(forward)), None);
     window.set_callback(minifb::Key::S, None, Some(Box::new(backward)), None);
     window.set_callback(minifb::Key::A, None, Some(Box::new(links)), None);
-    window.set_callback(minifb::Key::Q, None, Some(Box::new(llinks)), None);
+    window.set_callback(minifb::Key::Left, None, Some(Box::new(llinks)), None);
     window.set_callback(minifb::Key::D, None, Some(Box::new(rechts)), None);
-    window.set_callback(minifb::Key::E, None, Some(Box::new(lrechts)), None);
+    window.set_callback(minifb::Key::Right, None, Some(Box::new(lrechts)), None);
     window.set_callback(minifb::Key::Space, None, Some(Box::new(up)), None);
     window.set_callback(minifb::Key::LeftShift, None, Some(Box::new(down)), None);
     window.set_callback(minifb::Key::Down, None, Some(Box::new(ldown)), None);
     window.set_callback(minifb::Key::Up, None, Some(Box::new(lup)), None);
-    window.set_callback(minifb::Key::Left, None, Some(Box::new(lw)), None);
-    window.set_callback(minifb::Key::Right, None, Some(Box::new(ls)), None);
+    window.set_callback(minifb::Key::Enter, None, Some(Box::new(mine)), None);
+    window.set_callback(minifb::Key::NumPad1, Some(Box::new(place)), None, None);
 
     while !window.should_close() {
         let mut start = timer.elapsed().unwrap().as_millis();
 
+        *action.borrow_mut() = Action::NO;
         window.process_input();
         let pos = [*x.borrow_mut(), *y.borrow_mut(), *z.borrow_mut()];
         let rot = [*rx.borrow_mut(), *ry.borrow_mut(), *rz.borrow_mut()];
@@ -268,7 +262,7 @@ fn main() {
 
         shark.render(fb, &mut depth_buffer, &view_proj);
         let mut ground = false;
-        let mut td = 16.5;
+        let mut td = (6.5, [0.0; 3]);
         let mut touch: Option<usize> = None;
         let shark_dir = rot_to_dir([
             shark.rotation[0],
@@ -276,20 +270,20 @@ fn main() {
             shark.rotation[2],
         ]);
         let pdir = rot_to_dir([rot[0], -rot[1], rot[2]]);
-        let mut rpos = pos;
-        rpos[0] += pdir[0] * 0.05;
-        rpos[2] += pdir[2] * 0.05;
         for i in 0..world.len() {
             let cube = &mut world[i];
-            if cube.raycast(
-                pos,
-                [0.0, 1.0, -0.0],
-                1.5,
-                fb,
-                &mut depth_buffer,
-                &view_proj,
-                false,
-            ) < 3.5
+            if cube
+                .raycast(
+                    pos,
+                    [0.0, 1.0, -0.0],
+                    1.5,
+                    fb,
+                    &mut depth_buffer,
+                    &view_proj,
+                    false,
+                )
+                .0
+                < 3.5
             {
                 ground = true;
             }
@@ -302,21 +296,63 @@ fn main() {
                 &view_proj,
                 true,
             );
-            let t = cube.raycast(rpos, pdir, 16.5, fb, &mut depth_buffer, &view_proj, true);
-            if t < td {
+            let t = cube.raycast(pos, pdir, 6.5, fb, &mut depth_buffer, &view_proj, true);
+            if t.0 < td.0 {
                 td = t;
                 touch = Some(i);
-                println!("{}: {}", i, t);
             }
         }
         if !ground {
             *y.borrow_mut() -= 0.001 * deltat.borrow_mut().to_owned();
         }
         if touch.is_some() {
-            println!("touch");
-            let mut curr = world[touch.unwrap()].rotation;
-            curr[1] += 45.0f32.to_radians();
-            world[touch.unwrap()].rotation = curr;
+            let scale: Matrix = vec![
+                vec![world[touch.unwrap()].scale[0], 0.0, 0.0, 0.0],
+                vec![0.0, world[touch.unwrap()].scale[1], 0.0, 0.0],
+                vec![0.0, 0.0, world[touch.unwrap()].scale[2], 0.0],
+                vec![0.0, 0.0, 0.0, 1.0],
+            ]
+            .into();
+            let mut pos_matrix = Matrix::trans(world[touch.unwrap()].position) * -1.0;
+            pos_matrix = pos_matrix.rotate(world[touch.unwrap()].rotation) * scale;
+            for mesh in world[touch.unwrap()].model.meshes.iter() {
+                for i in 0..mesh.indices.len() / 4 {
+                    let v0 = &pos_matrix * mesh.vertices[mesh.indices[3 * i] as usize].position;
+                    let v1 = &pos_matrix * mesh.vertices[mesh.indices[3 * i + 1] as usize].position;
+                    let v2 = &pos_matrix * mesh.vertices[mesh.indices[3 * i + 2] as usize].position;
+                    let v3 = &pos_matrix * mesh.vertices[mesh.indices[3 * i + 3] as usize].position;
+                    draw_line(fb, &mut depth_buffer, &v0, &v1, &view_proj);
+                    draw_line(fb, &mut depth_buffer, &v1, &v2, &view_proj);
+                    draw_line(fb, &mut depth_buffer, &v2, &v3, &view_proj);
+                    draw_line(fb, &mut depth_buffer, &v3, &v0, &view_proj);
+                }
+            }
+            let mut mining = false;
+            match *action.borrow() {
+                Action::PLACING => {
+                    world.push(object::Object::cube(
+                        td.1, // Entirely random number 100% randomness guaranteed
+                        [0.0f32.to_radians(), 0.0f32.to_radians(), 0.0],
+                        [1.0, 1.0, 1.0],
+                        Some("./assets/grass.png"),
+                    ));
+                    dur.push(1000.0);
+                }
+                Action::MINING => {
+                    dur[touch.unwrap()] -= *deltat.borrow();
+                    if dur[touch.unwrap()] <= 0.0 {
+                        world.remove(touch.unwrap());
+                        dur.remove(touch.unwrap());
+                    }
+                    mining = true;
+                }
+                Action::NO => (),
+            }
+            for i in 0..dur.len() {
+                if i != touch.unwrap() || !mining {
+                    dur[i] = 1000.0;
+                }
+            }
         }
         println!("Raycast: {}", timer.elapsed().unwrap().as_millis() - start);
         start = timer.elapsed().unwrap().as_millis();
@@ -324,6 +360,12 @@ fn main() {
             cube.render(fb, &mut depth_buffer, &view_proj);
         }
         println!("Render: {}", timer.elapsed().unwrap().as_millis() - start);
+        let screen_size = [fb.width(), fb.height()];
+        for x in screen_size[0] / 2 - 2..screen_size[0] / 2 + 2 {
+            for y in screen_size[1] / 2 - 2..screen_size[1] / 2 + 2 {
+                fb.set_pixel(x, y, rgb_to_u32(255, 0, 0));
+            }
+        }
         // cube2.render(fb, &mut depth_buffer, &view_proj);
         // turtle.render(fb, &mut depth_buffer, &view_proj);
         //helmet.render(fb, &mut depth_buffer, &view_proj);

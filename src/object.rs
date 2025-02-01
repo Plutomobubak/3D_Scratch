@@ -158,7 +158,7 @@ impl Object {
         depth_buffer: &mut Framebuffer,
         mvp: &Matrix,
         draw: bool,
-    ) -> f32 {
+    ) -> (f32, [f32; 3]) {
         let mut mind = dist;
         let mut d0: Vertex = Vertex {
             position: [0.0; 3],
@@ -186,27 +186,18 @@ impl Object {
                 ]
                 .into();
                 let pos_matrix = (Matrix::trans(self.position).rotate(self.rotation)) * scale;
-                let mut v0: Matrix = vec![mesh.vertices[mesh.indices[i * 3] as usize]
-                    .position
-                    .to_vec()]
-                .into();
-                v0[0].push(1.0);
-                v0 = &pos_matrix * &v0;
-                v0 = vec![v0[0][0..3].to_vec()].into();
-                let mut v1: Matrix = vec![mesh.vertices[mesh.indices[i * 3 + 1] as usize]
-                    .position
-                    .to_vec()]
-                .into();
-                v1[0].push(1.0);
-                v1 = &pos_matrix * &v1;
-                v1 = vec![v1[0][0..3].to_vec()].into();
-                let mut v2: Matrix = vec![mesh.vertices[mesh.indices[i * 3 + 2] as usize]
-                    .position
-                    .to_vec()]
-                .into();
-                v2[0].push(1.0);
-                v2 = &pos_matrix * &v2;
-                v2 = vec![v2[0][0..3].to_vec()].into();
+                let mut v0 = mesh.vertices[mesh.indices[i * 3] as usize].position;
+                v0 = &pos_matrix * v0;
+                let v0: Matrix = vec![v0.to_vec()].into();
+
+                let mut v1 = mesh.vertices[mesh.indices[i * 3 + 1] as usize].position;
+                v1 = &pos_matrix * v1;
+                let v1: Matrix = vec![v1.to_vec()].into();
+
+                let mut v2 = mesh.vertices[mesh.indices[i * 3 + 2] as usize].position;
+                v2 = &pos_matrix * v2;
+                let v2: Matrix = vec![v2.to_vec()].into();
+
                 let origin: Matrix = vec![ray_origin.to_vec()].into();
                 let ray: Matrix = vec![ray_dir.to_vec()].into();
                 let e1 = &v1 - &v0;
@@ -222,7 +213,7 @@ impl Object {
                 }
                 let mat_v: Matrix = vec![e1[0].clone(), s[0].clone(), ray[0].clone()].into();
                 let v = mat_v.det() * inv_det;
-                if !(0.0..=1.0).contains(&v) {
+                if !(0.0..=1.0).contains(&v) || (u + v > 1.0) {
                     continue;
                 }
                 let mat_t: Matrix = vec![e1[0].clone(), e2[0].clone(), s[0].clone()].into();
@@ -261,6 +252,18 @@ impl Object {
                 base_col: [1.0, 0.0, 0.0, 1.0],
                 ..Default::default()
             };
+            // d0.position[0] *= -1.0;
+            // d0.position[1] *= -1.0;
+            // d0.position[2] *= -1.0;
+            // d1.position[0] *= -1.0;
+            // d1.position[1] *= -1.0;
+            // d1.position[2] *= -1.0;
+            // d2.position[0] *= -1.0;
+            // d2.position[1] *= -1.0;
+            // d2.position[2] *= -1.0;
+            // draw_line(fb, depth_buffer, &d0.position, &d1.position, mvp);
+            // draw_line(fb, depth_buffer, &d2.position, &d1.position, mvp);
+            // draw_line(fb, depth_buffer, &d0.position, &d2.position, mvp);
             d0.position = ((&minint) + &Matrix::from(vec![vec![-0.05, -0.05, 0.1]]))[0]
                 .clone()
                 .try_into()
@@ -285,7 +288,7 @@ impl Object {
                 &mat,
             );
         }
-        mind
+        (mind, (minint * -1.0).into())
     }
     // Renders to Framebuffer using its properties and given view-projection matrix
     pub fn render(&self, fb: &mut Framebuffer, depth_buffer: &mut Framebuffer, view_proj: &Matrix) {
