@@ -241,7 +241,14 @@ impl Object {
                             let mut origin = origin * -1.0;
                             origin[0][2] += 0.01;
                             let inter = intersection_point * -1.0;
-                            draw_line(fb, depth_buffer, &origin.into(), &inter.into(), mvp);
+                            draw_line(
+                                fb,
+                                depth_buffer,
+                                &origin.into(),
+                                &inter.into(),
+                                mvp,
+                                &[255, 0, 0],
+                            );
                         }
                     }
                 }

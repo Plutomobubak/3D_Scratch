@@ -1,24 +1,30 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::usize;
 
 use minifb::Key;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum State {
-    PRESSED,
-    HELD,
-    RELEASED,
+    Pressed,
+    Held,
+    Released,
 }
 
 pub struct Window {
     window: minifb::Window,
     framebuffer: Framebuffer,
-    callbacks: Vec<(State, Box<dyn FnMut()>, Box<dyn FnMut()>, Box<dyn FnMut()>)>,
+    input: Input,
 }
 pub struct Framebuffer {
     data: Vec<u32>,
     width: usize,
     height: usize,
+}
+pub struct Input {
+    key_states: std::collections::HashMap<Key, State>,
+    pressed_keys: HashSet<Key>,
+    held_keys: HashSet<Key>,
+    released_keys: HashSet<Key>,
 }
 impl Window {
     pub fn new(name: &str, w: usize, h: usize) -> Self {
@@ -28,20 +34,11 @@ impl Window {
         };
 
         let window = minifb::Window::new(name, w, h, options).expect("Failed to create window");
-        let mut callbacks: Vec<(State, Box<dyn FnMut()>, Box<dyn FnMut()>, Box<dyn FnMut()>)> =
-            Vec::new();
-        for _ in 0..300 {
-            callbacks.push((
-                State::RELEASED,
-                Box::new(|| {}),
-                Box::new(|| {}),
-                Box::new(|| {}),
-            ));
-        }
+        let input = Input::new();
 
         Window {
             window,
-            callbacks,
+            input,
             framebuffer: Framebuffer::new(w, h),
         }
     }
@@ -49,58 +46,12 @@ impl Window {
         &mut self.framebuffer
     }
 
+    pub fn input(&mut self) -> &mut Input {
+        &mut self.input
+    }
+
     pub fn should_close(&self) -> bool {
         !self.window.is_open()
-    }
-    pub fn set_callback(
-        &mut self,
-        key: Key,
-        press: Option<Box<dyn FnMut()>>,
-        hold: Option<Box<dyn FnMut()>>,
-        release: Option<Box<dyn FnMut()>>,
-    ) {
-        let i: usize = key as usize;
-        if let Some(press) = press {
-            self.callbacks[i].1 = press;
-        }
-        if let Some(hold) = hold {
-            self.callbacks[i].2 = hold;
-        }
-        if let Some(release) = release {
-            self.callbacks[i].3 = release;
-        }
-    }
-    pub fn process_input(&mut self) {
-        let mut h: Vec<usize> = Vec::new();
-        self.window.get_keys().iter().for_each(|k| {
-            let i = *k as usize;
-            h.push(i);
-            let k = &mut self.callbacks[i];
-            match k.0 {
-                State::RELEASED => {
-                    k.1();
-                    k.0 = State::PRESSED;
-                }
-                State::PRESSED => {
-                    k.0 = State::HELD;
-                }
-                State::HELD => {
-                    k.2();
-                }
-            }
-        });
-        for l in 0..self.callbacks.len() {
-            if !h.contains(&l) {
-                let k = &mut self.callbacks[l];
-                match k.0 {
-                    State::HELD | State::PRESSED => {
-                        k.3();
-                        k.0 = State::RELEASED;
-                    }
-                    State::RELEASED => {}
-                }
-            }
-        }
     }
 
     pub fn update(&mut self) {
@@ -116,6 +67,7 @@ impl Window {
         if width != self.framebuffer.width || height != self.framebuffer.height {
             self.framebuffer = Framebuffer::new(width, height)
         }
+        self.input.process_input(&self.window);
     }
 }
 impl Framebuffer {
@@ -136,6 +88,9 @@ impl Framebuffer {
     pub fn set_pixel(&mut self, x: usize, y: usize, val: u32) {
         self.data[x + y * self.width] = val;
     }
+    pub fn get_pixel(&mut self, x: usize, y: usize) -> u32 {
+        self.data[x + y * self.width]
+    }
     pub fn set_pixel_f32(&mut self, x: usize, y: usize, val: f32) {
         self.data[x + y * self.width] = (val * u32::MAX as f32) as u32;
     }
@@ -146,5 +101,61 @@ impl Framebuffer {
         for i in 0..self.data.len() {
             self.data[i] = col;
         }
+    }
+}
+impl Input {
+    pub fn new() -> Self {
+        Self {
+            key_states: std::collections::HashMap::new(),
+            pressed_keys: HashSet::new(),
+            held_keys: HashSet::new(),
+            released_keys: HashSet::new(),
+        }
+    }
+
+    pub fn process_input(&mut self, window: &minifb::Window) {
+        let current_keys: HashSet<Key> = window.get_keys().into_iter().collect();
+
+        self.pressed_keys.clear();
+        self.released_keys.clear();
+        self.held_keys.clear();
+
+        for key in &current_keys {
+            let state = self.key_states.entry(*key).or_insert(State::Released);
+            match *state {
+                State::Released => {
+                    self.pressed_keys.insert(*key);
+                    *state = State::Pressed;
+                }
+                State::Pressed | State::Held => {
+                    self.held_keys.insert(*key);
+                    *state = State::Held;
+                }
+            }
+        }
+
+        self.key_states.retain(|key, state| {
+            if !current_keys.contains(key) {
+                if *state == State::Pressed || *state == State::Held {
+                    self.released_keys.insert(*key);
+                }
+                *state = State::Released;
+                false
+            } else {
+                true
+            }
+        });
+    }
+
+    pub fn is_key_down(&self, key: Key) -> bool {
+        self.pressed_keys.contains(&key)
+    }
+
+    pub fn is_key_held(&self, key: Key) -> bool {
+        self.held_keys.contains(&key)
+    }
+
+    pub fn is_key_released(&self, key: Key) -> bool {
+        self.released_keys.contains(&key)
     }
 }

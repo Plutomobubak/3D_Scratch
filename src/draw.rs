@@ -3,9 +3,29 @@ use crate::{
     types::Matrix,
     window::Framebuffer,
 };
-
+use rayon::prelude::*; // For parallelizatio
+use std::sync::{Arc, Mutex};
+use std::{
+    sync::atomic::{AtomicU32, Ordering},
+    u32,
+};
 pub fn rgb_to_u32(r: u8, g: u8, b: u8) -> u32 {
     let (r, g, b) = (r as u32, g as u32, b as u32);
+    (r << 16) | (g << 8) | b
+}
+fn blend_pixel(dst: u32, src: u32, alpha: f32) -> u32 {
+    let src_r = ((src >> 16) & 0xFF) as f32;
+    let src_g = ((src >> 8) & 0xFF) as f32;
+    let src_b = (src & 0xFF) as f32;
+
+    let dst_r = ((dst >> 16) & 0xFF) as f32;
+    let dst_g = ((dst >> 8) & 0xFF) as f32;
+    let dst_b = (dst & 0xFF) as f32;
+
+    let r = (src_r * alpha + dst_r * (1.0 - alpha)) as u32;
+    let g = (src_g * alpha + dst_g * (1.0 - alpha)) as u32;
+    let b = (src_b * alpha + dst_b * (1.0 - alpha)) as u32;
+
     (r << 16) | (g << 8) | b
 }
 pub fn transform_normal(normal: [f32; 3], invmod: &Matrix) -> [f32; 3] {
@@ -45,7 +65,8 @@ pub fn clip_to_screen(clip: [f32; 2], screen_size: &Vec<f32>) -> [f32; 2] {
     ]
 }
 // Le trinagle
-pub fn edge(a: &[f32; 2], b: &[f32; 2], p: &[f32; 2]) -> f32 {
+#[inline(always)]
+pub fn edge(a: [f32; 2], b: [f32; 2], p: [f32; 2]) -> f32 {
     ((p[0] - a[0]) * (b[1] - a[1])) - ((p[1] - a[1]) * (b[0] - a[0]))
 }
 pub fn draw_line(
@@ -54,6 +75,7 @@ pub fn draw_line(
     v0: &[f32; 3],
     v1: &[f32; 3],
     mvp: &Matrix,
+    col: &[u8; 3],
 ) {
     // println!("VLine from {:?} to {:?}", v0, v1);
     let v0_clip = project(v0, mvp);
@@ -91,7 +113,7 @@ pub fn draw_line(
             let d = v0_clip.0[2] + (dd * t * sd);
             if d < z {
                 depth_buffer.set_pixel_f32(x as usize, y as usize, d);
-                fb.set_pixel(x as usize, y as usize, rgb_to_u32(255, 0, 0));
+                fb.set_pixel(x as usize, y as usize, rgb_to_u32(col[0], col[1], col[2]));
             }
         }
         let e2 = err * 2.0;
@@ -138,16 +160,17 @@ pub fn draw_triangle(
     let ys = (a[1].min(b[1]).min(c[1]).max(0.0)).floor() as usize;
     let xl = (a[0].max(b[0]).max(c[0]).min(screen_size[0] - 1.0)).ceil() as usize;
     let yl = (a[1].max(b[1]).max(c[1]).min(screen_size[1] - 1.0)).ceil() as usize;
+
     for x in xs..xl {
         for y in ys..yl {
             let p: [f32; 2] = [x as f32, y as f32];
-            let a0 = edge(&b, &c, &p);
-            let a1 = edge(&c, &a, &p);
-            let a2 = edge(&a, &b, &p);
+            let a0 = edge(b, c, p);
+            let a1 = edge(c, a, p);
+            let a2 = edge(a, b, p);
 
             let inside = a0 < 0.0 && a1 < 0.0 && a2 < 0.0;
             if inside {
-                let area_rep = 1.0 / edge(&a, &b, &c);
+                let area_rep = 1.0 / edge(a, b, c);
                 let bary0 = a0 * area_rep;
                 let bary1 = a1 * area_rep;
                 let bary2 = a2 * area_rep;
@@ -222,6 +245,7 @@ pub fn draw_triangle(
                         (base_color[1] * intensity * 255.99) as u8,
                         (base_color[2] * intensity * 255.99) as u8,
                     );
+                    let color = blend_pixel(fb.get_pixel(x, y), color, base_color[3]);
                     fb.set_pixel(
                         x, y,
                         color,

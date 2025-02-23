@@ -1,3 +1,4 @@
+mod controls;
 mod draw;
 mod model;
 mod object;
@@ -6,12 +7,11 @@ mod texture;
 mod types;
 mod window;
 
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::time::SystemTime;
 
+use controls::{rot_to_dir, Action, Controls};
 use draw::draw_line;
-use model::{load_model, Model, Vertex};
+use model::load_model;
 use physics::{GravType, Physics};
 use types::Matrix;
 use window::{Framebuffer, Window};
@@ -20,34 +20,22 @@ fn rgb_to_u32(r: u8, g: u8, b: u8) -> u32 {
     let (r, g, b) = (r as u32, g as u32, b as u32);
     (r << 16) | (g << 8) | b
 }
-fn rot_to_dir(rot: [f32; 3]) -> [f32; 3] {
-    let cos_pitch = rot[0].cos();
-    let sin_pitch = rot[0].sin();
-    let cos_yaw = rot[1].cos();
-    let sin_yaw = rot[1].sin();
-
-    [
-        cos_pitch * sin_yaw,  // X
-        sin_pitch,            // Y
-        -cos_pitch * cos_yaw, // Z
-    ]
-}
 fn main() {
     let mut window = Window::new("asdf", 512, 512);
 
-    let mut helmet = object::Object::new(
-        load_model("./assets/helmet/DamagedHelmet.gltf"),
-        [0.0, 0.0, 0.0],
-        [
-            0.0f32.to_radians(),
-            0.0f32.to_radians(),
-            180.0f32.to_radians(),
-        ],
-        [1.0, 1.0, 1.0],
-    );
+    // let mut helmet = object::Object::new(
+    //     load_model("./assets/helmet/DamagedHelmet.gltf"),
+    //     [0.0, 0.0, 0.0],
+    //     [
+    //         0.0f32.to_radians(),
+    //         0.0f32.to_radians(),
+    //         180.0f32.to_radians(),
+    //     ],
+    //     [1.0, 1.0, 1.0],
+    // );
     let mut shark = object::Object::new(
         load_model("./assets/blahaj.glb"),
-        [0.0, -2.0, 10.0],
+        [0.0, -2.0, 50.0],
         [
             0.0f32.to_radians(),
             0.0f32.to_radians(),
@@ -55,179 +43,33 @@ fn main() {
         ],
         [1.0, 1.0, 1.0],
     )
-    .with_physics(Physics::new(6.0e12, false, GravType::Space));
-    let mut turtle = object::Object::new(
-        load_model("./assets/turtle.glb"),
-        [0.0, -0.5, 0.0],
+    .with_physics(Physics::new(2.0e3, false, GravType::Space));
+    shark.physics.as_mut().unwrap().lock().unwrap().veloc[0] = 0.0895;
+    let ball = object::Object::new(
+        load_model("./assets/ball/ball.gltf"),
+        [0.0, -2.0, 0.0],
         [
             0.0f32.to_radians(),
-            180.0f32.to_radians(),
+            0.0f32.to_radians(),
             180.0f32.to_radians(),
         ],
-        [1.0, 1.0, 1.0],
-    );
+        [10.0, 10.0, 10.0],
+    )
+    .with_physics(Physics::new(6.0e9, false, GravType::Space));
     let mut world: Vec<object::Object> = Vec::new();
-    for i in -6..4 {
-        for j in -6..4 {
-            world.push(
-                object::Object::cube(
-                    [i as f32, -2.0, j as f32],
-                    [0.0f32.to_radians(), 0.0f32.to_radians(), 0.0],
-                    [1.0, 1.0, 1.0],
-                    Some("./assets/grass.png"),
-                ), //.with_physics(Physics::new(6.0e12, false, GravType::Space)),
-            );
-        }
-    }
-    for i in 0..4 {
-        world.push(object::Object::new(
-            load_model("./assets/cylinder/cylinder.gltf"),
-            [0.0, i as f32 - 1.0, 0.0],
-            [
-                0.0f32.to_radians(),
-                0.0f32.to_radians(),
-                180.0f32.to_radians(),
-            ],
-            [0.5, 0.5, 0.5],
-        ));
-    }
+    world.push(ball);
     let mut dur: Vec<f32> = vec![1000.0; world.len()];
 
     let timer = SystemTime::now();
     let mut depth_buffer =
         Framebuffer::new(window.framebuffer().width(), window.framebuffer().height());
-
-    let speed = 0.01;
-    let rotspeed = 0.002;
-
-    enum Action {
-        MINING,
-        PLACING,
-        NO,
-    }
-    let deltat = Rc::new(RefCell::new(0.0));
-    let x = Rc::new(RefCell::new(0.0));
-    let y = Rc::new(RefCell::new(0.0));
-    let z = Rc::new(RefCell::new(-5.5));
-    let rx = Rc::new(RefCell::new(0.0));
-    let ry = Rc::new(RefCell::new(0.0));
-    let rz = Rc::new(RefCell::new(0.0));
-    let action = Rc::new(RefCell::new(Action::NO));
-
-    let forward = {
-        let x = Rc::clone(&x);
-        let z = Rc::clone(&z);
-        let ry = Rc::clone(&ry);
-        let deltat = Rc::clone(&deltat);
-        move || {
-            *z.borrow_mut() += speed * (*ry.borrow() as f32).cos() * *deltat.borrow();
-            *x.borrow_mut() += speed * (*ry.borrow() as f32).sin() * *deltat.borrow();
-        }
-    };
-    let backward = {
-        let x = Rc::clone(&x);
-        let z = Rc::clone(&z);
-        let ry = Rc::clone(&ry);
-        let deltat = Rc::clone(&deltat);
-        move || {
-            *z.borrow_mut() -= speed * (*ry.borrow() as f32).cos() * *deltat.borrow();
-            *x.borrow_mut() -= speed * (*ry.borrow() as f32).sin() * *deltat.borrow();
-        }
-    };
-    let up = {
-        let deltat = Rc::clone(&deltat);
-        let y = Rc::clone(&y);
-        move || {
-            *y.borrow_mut() += speed * *deltat.borrow();
-        }
-    };
-    let down = {
-        let deltat = Rc::clone(&deltat);
-        let y = Rc::clone(&y);
-        move || {
-            *y.borrow_mut() -= speed * *deltat.borrow();
-        }
-    };
-    let links = {
-        let z = Rc::clone(&z);
-        let x = Rc::clone(&x);
-        let ry = Rc::clone(&ry);
-        let deltat = Rc::clone(&deltat);
-        move || {
-            *x.borrow_mut() += speed * (*ry.borrow() as f32).cos() * *deltat.borrow();
-            *z.borrow_mut() -= speed * (*ry.borrow() as f32).sin() * *deltat.borrow();
-        }
-    };
-    let llinks = {
-        let ry = Rc::clone(&ry);
-        let deltat = Rc::clone(&deltat);
-        move || {
-            *ry.borrow_mut() += rotspeed * *deltat.borrow();
-        }
-    };
-    let rechts = {
-        let x = Rc::clone(&x);
-        let z = Rc::clone(&z);
-        let ry = Rc::clone(&ry);
-        let deltat = Rc::clone(&deltat);
-        move || {
-            *x.borrow_mut() -= speed * (*ry.borrow() as f32).cos() * *deltat.borrow();
-            *z.borrow_mut() += speed * (*ry.borrow() as f32).sin() * *deltat.borrow();
-        }
-    };
-    let lrechts = {
-        let ry = Rc::clone(&ry);
-        let deltat = Rc::clone(&deltat);
-        move || {
-            *ry.borrow_mut() -= rotspeed * *deltat.borrow();
-        }
-    };
-    let ldown = {
-        let rx = Rc::clone(&rx);
-        let deltat = Rc::clone(&deltat);
-        move || {
-            *rx.borrow_mut() += rotspeed * *deltat.borrow();
-        }
-    };
-    let lup = {
-        let rx = Rc::clone(&rx);
-        let deltat = Rc::clone(&deltat);
-        move || {
-            *rx.borrow_mut() -= rotspeed * *deltat.borrow();
-        }
-    };
-    let mine = {
-        let action = Rc::clone(&action);
-        move || {
-            *action.borrow_mut() = Action::MINING;
-        }
-    };
-    let place = {
-        let action = Rc::clone(&action);
-        move || {
-            *action.borrow_mut() = Action::PLACING;
-        }
-    };
-    window.set_callback(minifb::Key::W, None, Some(Box::new(forward)), None);
-    window.set_callback(minifb::Key::S, None, Some(Box::new(backward)), None);
-    window.set_callback(minifb::Key::A, None, Some(Box::new(links)), None);
-    window.set_callback(minifb::Key::Left, None, Some(Box::new(llinks)), None);
-    window.set_callback(minifb::Key::D, None, Some(Box::new(rechts)), None);
-    window.set_callback(minifb::Key::Right, None, Some(Box::new(lrechts)), None);
-    window.set_callback(minifb::Key::Space, None, Some(Box::new(up)), None);
-    window.set_callback(minifb::Key::LeftShift, None, Some(Box::new(down)), None);
-    window.set_callback(minifb::Key::Down, None, Some(Box::new(ldown)), None);
-    window.set_callback(minifb::Key::Up, None, Some(Box::new(lup)), None);
-    window.set_callback(minifb::Key::Enter, None, Some(Box::new(mine)), None);
-    window.set_callback(minifb::Key::NumPad1, Some(Box::new(place)), None, None);
+    let mut player = Controls::new();
+    let mut deltat = 0.1;
 
     while !window.should_close() {
-        let mut start = timer.elapsed().unwrap().as_millis();
+        let start = timer.elapsed().unwrap().as_millis();
+        player.update(window.input(), deltat);
 
-        *action.borrow_mut() = Action::NO;
-        window.process_input();
-        let pos = [*x.borrow_mut(), *y.borrow_mut(), *z.borrow_mut()];
-        let rot = [*rx.borrow_mut(), *ry.borrow_mut(), *rz.borrow_mut()];
         // Process buffers
         let fb = window.framebuffer();
         if depth_buffer.width() != fb.width() || depth_buffer.height() != fb.height() {
@@ -237,7 +79,7 @@ fn main() {
         depth_buffer.clear(u32::MAX);
 
         //View and projection
-        let view_matrix = Matrix::identity().rotate(rot) * Matrix::trans(pos);
+        let view_matrix = Matrix::identity().rotate(player.rot) * Matrix::trans(player.pos);
         let proj_matrix = Matrix::projection(
             60.0f32.to_radians(),
             fb.width() as f32 / fb.height() as f32,
@@ -249,19 +91,12 @@ fn main() {
         // Rotate objects
 
         let elapsed = timer.elapsed().unwrap().as_secs_f32();
-        // helmet.rotation[1] = elapsed;
-        //cube.rotation[1] = elapsed;
         shark.rotation[1] = elapsed;
-        // turtle.rotation[1] = elapsed;
-
-        //shark.update_physics(delta);
-        //cube.update_physics(delta);
-        // cube2.update_physics(delta);
 
         //Render objects
 
-        shark.render(fb, &mut depth_buffer, &view_proj);
-        let mut ground = false;
+        // Raycast
+        let mut groundd = 99.9;
         let mut td = (6.5, [0.0; 3]);
         let mut touch: Option<usize> = None;
         let shark_dir = rot_to_dir([
@@ -269,24 +104,25 @@ fn main() {
             shark.rotation[1] - 90.0f32.to_radians(),
             shark.rotation[2],
         ]);
-        let pdir = rot_to_dir([rot[0], -rot[1], rot[2]]);
+        let pdir = player.rot_dir();
         for i in 0..world.len() {
             let cube = &mut world[i];
-            if cube
+            // Ground check
+            let d = cube
                 .raycast(
-                    pos,
+                    player.pos,
                     [0.0, 1.0, -0.0],
-                    1.5,
+                    2.5,
                     fb,
                     &mut depth_buffer,
                     &view_proj,
                     false,
                 )
-                .0
-                < 3.5
-            {
-                ground = true;
+                .0;
+            if d < groundd {
+                groundd = d;
             }
+            // Point
             cube.raycast(
                 shark.position,
                 shark_dir,
@@ -296,15 +132,26 @@ fn main() {
                 &view_proj,
                 true,
             );
-            let t = cube.raycast(pos, pdir, 6.5, fb, &mut depth_buffer, &view_proj, true);
+            let t = cube.raycast(
+                player.pos,
+                pdir,
+                6.5,
+                fb,
+                &mut depth_buffer,
+                &view_proj,
+                true,
+            );
             if t.0 < td.0 {
                 td = t;
                 touch = Some(i);
             }
         }
-        if !ground {
-            *y.borrow_mut() -= 0.001 * deltat.borrow_mut().to_owned();
+        if groundd >= 2.5 {
+            //player.pos[1] -= 0.001 * deltat;
+        } else if groundd < 1.5 {
+            player.pos[1] += 0.005 * deltat;
         }
+        // Interact with blocks
         if touch.is_some() {
             let scale: Matrix = vec![
                 vec![world[touch.unwrap()].scale[0], 0.0, 0.0, 0.0],
@@ -316,37 +163,58 @@ fn main() {
             let mut pos_matrix = Matrix::trans(world[touch.unwrap()].position) * -1.0;
             pos_matrix = pos_matrix.rotate(world[touch.unwrap()].rotation) * scale;
             for mesh in world[touch.unwrap()].model.meshes.iter() {
-                for i in 0..mesh.indices.len() / 4 {
-                    let v0 = &pos_matrix * mesh.vertices[mesh.indices[3 * i] as usize].position;
-                    let v1 = &pos_matrix * mesh.vertices[mesh.indices[3 * i + 1] as usize].position;
-                    let v2 = &pos_matrix * mesh.vertices[mesh.indices[3 * i + 2] as usize].position;
-                    let v3 = &pos_matrix * mesh.vertices[mesh.indices[3 * i + 3] as usize].position;
-                    draw_line(fb, &mut depth_buffer, &v0, &v1, &view_proj);
-                    draw_line(fb, &mut depth_buffer, &v1, &v2, &view_proj);
-                    draw_line(fb, &mut depth_buffer, &v2, &v3, &view_proj);
-                    draw_line(fb, &mut depth_buffer, &v3, &v0, &view_proj);
+                for i in 0..mesh.indices.len() / 3 {
+                    let scal = Matrix::identity() * 1.05;
+                    let v1 = &pos_matrix
+                        * (&scal * mesh.vertices[mesh.indices[3 * i + 1] as usize].position);
+                    let v2 = &pos_matrix
+                        * (&scal * mesh.vertices[mesh.indices[3 * i + 2] as usize].position);
+                    draw_line(
+                        fb,
+                        &mut depth_buffer,
+                        &v1,
+                        &v2,
+                        &view_proj,
+                        &[255, 255, 255],
+                    );
                 }
             }
             let mut mining = false;
-            match *action.borrow() {
-                Action::PLACING => {
+            match player.action {
+                Action::Placing => {
+                    let hit = world[touch.unwrap()].position;
+                    let xdif = td.1[0] - hit[0];
+                    let ydif = td.1[1] - hit[1];
+                    let zdif = td.1[2] - hit[2];
+                    let dir = if xdif.abs() > ydif.abs() {
+                        if xdif.abs() > zdif.abs() {
+                            [1.0 * xdif.signum(), 0.0, 0.0]
+                        } else {
+                            [0.0, 0.0, 1.0 * zdif.signum()]
+                        }
+                    } else if ydif.abs() > zdif.abs() {
+                        [0.0, 1.0 * ydif.signum(), 0.0]
+                    } else {
+                        [0.0, 0.0, 1.0 * zdif.signum()]
+                    };
+                    let new_pos = [hit[0] + dir[0], hit[1] + dir[1], hit[2] + dir[2]];
                     world.push(object::Object::cube(
-                        td.1, // Entirely random number 100% randomness guaranteed
+                        new_pos,
                         [0.0f32.to_radians(), 0.0f32.to_radians(), 0.0],
                         [1.0, 1.0, 1.0],
                         Some("./assets/grass.png"),
                     ));
                     dur.push(1000.0);
                 }
-                Action::MINING => {
-                    dur[touch.unwrap()] -= *deltat.borrow();
+                Action::Mining => {
+                    dur[touch.unwrap()] -= deltat;
                     if dur[touch.unwrap()] <= 0.0 {
                         world.remove(touch.unwrap());
                         dur.remove(touch.unwrap());
                     }
                     mining = true;
                 }
-                Action::NO => (),
+                Action::No => (),
             }
             for i in 0..dur.len() {
                 if i != touch.unwrap() || !mining {
@@ -354,22 +222,21 @@ fn main() {
                 }
             }
         }
-        println!("Raycast: {}", timer.elapsed().unwrap().as_millis() - start);
-        start = timer.elapsed().unwrap().as_millis();
+        // Render all
         for cube in world.iter_mut() {
+            cube.update_physics(deltat);
             cube.render(fb, &mut depth_buffer, &view_proj);
         }
-        println!("Render: {}", timer.elapsed().unwrap().as_millis() - start);
+        shark.update_physics(deltat);
+        shark.render(fb, &mut depth_buffer, &view_proj);
+        // Draw cursor in the middle
         let screen_size = [fb.width(), fb.height()];
         for x in screen_size[0] / 2 - 2..screen_size[0] / 2 + 2 {
             for y in screen_size[1] / 2 - 2..screen_size[1] / 2 + 2 {
                 fb.set_pixel(x, y, rgb_to_u32(255, 0, 0));
             }
         }
-        // cube2.render(fb, &mut depth_buffer, &view_proj);
-        // turtle.render(fb, &mut depth_buffer, &view_proj);
-        //helmet.render(fb, &mut depth_buffer, &view_proj);
-        *deltat.borrow_mut() = (timer.elapsed().unwrap().as_millis() - start) as f32;
+        deltat = (timer.elapsed().unwrap().as_millis() - start) as f32;
 
         //Benchmark
         // println!("Matrix multiplications: {}", types::get_matrix_mul_count());
